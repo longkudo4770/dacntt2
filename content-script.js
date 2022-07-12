@@ -212,82 +212,75 @@ async function onRecordScreenCam() {
                     btnPause.disabled = false;
                     buttonStop.disabled = false;
                     btnMute.disabled = false;
-                    btnOnOffCam.disabled = false;
-
-                    //show camera
-                    if (devicesInfo.videoInput.length > 0) {
-                        const cameraOpts =  {
-                            audio: false,
-                            video: {
-                                deviceId: videoInputSelect.value,
-                                width: { min: 100, max: 1920, ideal: 1280 },
-                                height: { min: 100, max: 1080, ideal: 720 },
-                                frameRate: { ideal: 30 }
-                            }
-                        }
-                        const cameraStream = await navigator.mediaDevices.getUserMedia(cameraOpts);
-                        cameraDOM = findElement('#rsd-camera');
-                        if (cameraDOM) {
-                            cameraDOM.srcObject = cameraStream;
-                        }
-                    }
 
                     //show screen
-                    const screenStream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: false });
-                    screenDOM = findElement("#rsd-screen");
-                    if (screenDOM) {
-                        screenDOM.srcObject = screenStream;
-                    }
-                    screenDOM.style.display = "none";
+                    const screenStream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true });
 
-                    //pause record
-                    btnPause.onclick = onPauseRecord;
-
-                    //mute mic
-                    btnMute.onclick = OnOffMic;
-
-                    //turn on/off cam
-                    btnOnOffCam.onclick = OnOffCam;
-
-                    //listen stop sharing
-                    screenStream.oninactive = onStopRecord;
-                    buttonStop.onclick = onStopRecord;
-
-                    //merged into 1 video via canvas
-                    const canvasDOM = findElement("#rsd-canvas");
-                    if (canvasDOM) {
-                        //setting high resolution video record
-                        canvasDOM.width = 2000;
-                        canvasDOM.height = 1000;
-                        //setting display style
-                        canvasDOM.style.width = "350px";
-                        canvasDOM.style.height = "200px";
-                        const ctx = canvasDOM.getContext("2d");
-
-                        //move 2 video into canvas
-                        drawVideo(ctx, screenDOM, cameraDOM);
-                    }
-
-                    //capture screen from canvas
-                    const canvasStream = canvasDOM.captureStream(30);
-
-                    //audio stream
-                    const audioStreamOpts = {
-                        mineType: "video/webm;codecs=vp8,opus",
-                        //mineType: "video/mp4"
-                        audio: {
-                            deviceId: audioInputSelect.value
+                    await navigator.mediaDevices.getUserMedia({
+                        audio: true,
+                        video: false
+                    }).then(function(audioStream) {
+                        const stream = new MediaStream();
+                        screenStream.getVideoTracks().forEach(function(videoTrack) {
+                            stream.addTrack(videoTrack);
+                        });
+                        
+                        var context = new AudioContext();
+                        var audioDestinationNode = context.createMediaStreamDestination();
+                        if (screenStream && screenStream.getAudioTracks().length > 0) {
+                            //get the audio from the screen stream
+                            const systemSource = context.createMediaStreamSource(screenStream);
+                
+                            //set it's volume (from 0.1 to 1.0)
+                            const systemGain = context.createGain();
+                            systemGain.gain.value = 1.0;
+                
+                            //add it to the destination
+                            systemSource.connect(systemGain).connect(audioDestinationNode);
                         }
-                    }
-                    console.log(audioStreamOpts);
+                
+                        //check to see if we have a microphone stream and only then add it
+                        if (audioStream && audioStream.getAudioTracks().length > 0) {
+                            //get the audio from the microphone stream
+                            const micSource = context.createMediaStreamSource(audioStream);
+                
+                            //set it's volume
+                            const micGain = context.createGain();
+                            micGain.gain.value = 1.0;
+                
+                            //add it to the destination
+                            micSource.connect(micGain).connect(audioDestinationNode);
+                        }
+                
+                        //add the combined audio stream
+                        audioDestinationNode.stream.getAudioTracks().forEach(function(audioTrack) {
+                            stream.addTrack(audioTrack);
+                        });
+                
+                        cameraDOM = findElement('#rsd-camera');
+                        if (cameraDOM) {
+                            cameraDOM.style.display = "none";
+                        }
 
-                    const audioStream = await navigator.mediaDevices.getUserMedia(audioStreamOpts);
-                    for (const track of audioStream.getTracks()) {
-                        canvasStream.addTrack(track);
-                    }
+                        screenDOM = findElement("#rsd-screen");
+                        if (screenDOM) {
+                            screenDOM.srcObject = stream;
+                            screenDOM.muted = true;
+                        }
+                        
+                        //pause record
+                        btnPause.onclick = onPauseRecord;
 
-                    //record stream
-                    onRecord(canvasStream, shadow);
+                        //mute mic
+                        btnMute.onclick = OnOffMic;
+
+                        //listen stop sharing
+                        screenStream.oninactive = onStopRecord;
+                        buttonStop.onclick = onStopRecord;
+
+                        //record stream
+                        onRecord(stream, shadow);
+                    });
                 } catch (error) {
                     console.log("Something media wrong");
                 }
@@ -381,6 +374,7 @@ function OnOffCam() {
     }
 }
 
+/*
 function drawVideo(ctx, screen, camera) {
     //screen
     const screenX = 0; //toa do x de dat video trong canvas
@@ -400,6 +394,7 @@ function drawVideo(ctx, screen, camera) {
         drawVideo(ctx, screen, camera);
     })
 }
+*/
 
 async function getDevices() {
     try {
